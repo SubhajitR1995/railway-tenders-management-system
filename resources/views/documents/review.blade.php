@@ -220,16 +220,20 @@
                 @forelse($document->workItems as $index => $item)
                     <div class="work-item grid grid-cols-12 gap-2 bg-gray-50 p-3 rounded-lg items-start" data-index="{{ $index }}">
                         <input type="hidden" name="items[{{ $index }}][id]" value="{{ $item->id }}">
-                        <div class="col-span-2">
-                            <label class="text-xs text-gray-500">Schedule</label>
-                            <select name="items[{{ $index }}][schedule_name]" class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
-                                <option value="Schedule A" @selected($item->schedule_name === 'Schedule A')>Sch A</option>
-                                <option value="Schedule B" @selected($item->schedule_name === 'Schedule B')>Sch B</option>
-                                <option value="Schedule B1" @selected($item->schedule_name === 'Schedule B1')>Sch B1</option>
+                        <div class="col-span-1">
+                            <label class="text-xs text-gray-500">Sch</label>
+                            <select name="items[{{ $index }}][schedule_name]" class="w-full border border-gray-300 rounded px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+                                <option value="Schedule A" @selected($item->schedule_name === 'Schedule A')>A</option>
+                                <option value="Schedule B" @selected($item->schedule_name === 'Schedule B')>B</option>
+                                <option value="Schedule B1" @selected($item->schedule_name === 'Schedule B1')>B1</option>
+                                <option value="Schedule C" @selected($item->schedule_name === 'Schedule C')>C</option>
+                                <option value="Schedule D" @selected($item->schedule_name === 'Schedule D')>D</option>
+                                <option value="Schedule E" @selected($item->schedule_name === 'Schedule E')>E</option>
+                                <option value="Schedule F" @selected($item->schedule_name === 'Schedule F')>F</option>
                             </select>
                         </div>
                         <div class="col-span-1">
-                            <label class="text-xs text-gray-500">Item No</label>
+                            <label class="text-xs text-gray-500">No</label>
                             <input type="text" name="items[{{ $index }}][item_number]" value="{{ $item->item_number }}"
                                 class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
                                 placeholder="1">
@@ -258,7 +262,12 @@
                                 placeholder="TRM">
                         </div>
                         <div class="col-span-2">
-                            <label class="text-xs text-gray-500">Advised Value (₹)</label>
+                            <label class="text-xs text-gray-500">Unit Rate (₹)</label>
+                            <input type="number" step="0.0001" name="items[{{ $index }}][bid_rate_unit_rate]" value="{{ $item->bid_rate_unit_rate }}"
+                                class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        </div>
+                        <div class="col-span-1">
+                            <label class="text-xs text-gray-500">Advised (₹)</label>
                             <input type="number" step="0.01" name="items[{{ $index }}][advised_value]" value="{{ $item->advised_value }}"
                                 class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
                         </div>
@@ -270,6 +279,16 @@
                     <p class="text-sm text-gray-400 text-center py-4" id="noItemsMsg">No work items yet. Click "+ Add Item" to add manually.</p>
                 @endforelse
             </div>
+
+            @if($document->workItems->isNotEmpty())
+                <div class="flex justify-end mt-4 pt-3 border-t border-gray-100">
+                    <div class="text-right">
+                        <span class="text-xs text-gray-500">Total Advised Value: </span>
+                        <span class="text-sm font-bold text-gray-800">₹{{ number_format($document->workItems->sum('advised_value'), 2) }}</span>
+                        <span class="text-xs text-gray-400 ml-2">({{ $document->workItems->count() }} items)</span>
+                    </div>
+                </div>
+            @endif
         </div>
 
         {{-- Notes --}}
@@ -303,16 +322,20 @@
             const div = document.createElement('div');
             div.className = 'work-item grid grid-cols-12 gap-2 bg-gray-50 p-3 rounded-lg items-start';
             div.innerHTML = `
-                <div class="col-span-2">
-                    <label class="text-xs text-gray-500">Schedule</label>
-                    <select name="items[${itemIndex}][schedule_name]" class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
-                        <option value="Schedule A">Sch A</option>
-                        <option value="Schedule B">Sch B</option>
-                        <option value="Schedule B1">Sch B1</option>
+                <div class="col-span-1">
+                    <label class="text-xs text-gray-500">Sch</label>
+                    <select name="items[${itemIndex}][schedule_name]" class="w-full border border-gray-300 rounded px-1 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="Schedule A">A</option>
+                        <option value="Schedule B">B</option>
+                        <option value="Schedule B1">B1</option>
+                        <option value="Schedule C">C</option>
+                        <option value="Schedule D">D</option>
+                        <option value="Schedule E">E</option>
+                        <option value="Schedule F">F</option>
                     </select>
                 </div>
                 <div class="col-span-1">
-                    <label class="text-xs text-gray-500">Item No</label>
+                    <label class="text-xs text-gray-500">No</label>
                     <input type="text" name="items[${itemIndex}][item_number]" class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="1">
                 </div>
                 <div class="col-span-1">
@@ -332,7 +355,11 @@
                     <input type="text" name="items[${itemIndex}][unit]" class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="TRM">
                 </div>
                 <div class="col-span-2">
-                    <label class="text-xs text-gray-500">Advised Value (₹)</label>
+                    <label class="text-xs text-gray-500">Unit Rate (₹)</label>
+                    <input type="number" step="0.0001" name="items[${itemIndex}][bid_rate_unit_rate]" class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div class="col-span-1">
+                    <label class="text-xs text-gray-500">Advised (₹)</label>
                     <input type="number" step="0.01" name="items[${itemIndex}][advised_value]" class="w-full border border-gray-300 rounded px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-blue-500">
                 </div>
                 <div class="col-span-1 flex items-end justify-end pb-1">

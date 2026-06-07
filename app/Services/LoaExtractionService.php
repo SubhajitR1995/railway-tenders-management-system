@@ -255,19 +255,21 @@ class LoaExtractionService
         // Examples: "M/s R N CHOUDHARY-KISHANGANJ", "M/s S. D. ENTERPRISE-BURDWAN"
         if (preg_match('/M\/s\s+(.+?)(?:\s+-\s+[A-Z]+)?(?:\s+[A-Z]{2}\s+[A-Z]+\s+\d+|$)/i', $text, $m)) {
             $name = trim($m[1] ?? '');
-            if (!empty($name) && strlen($name) > 2) {
+            if (! empty($name) && strlen($name) > 2) {
                 // Clean up the name
                 $name = preg_replace('/\s*-.*$/', '', $name);  // remove anything after hyphen
                 $name = preg_replace('/^\s+|\s+$/', '', $name);  // trim
-                return 'M/s ' . trim($name);
+
+                return 'M/s '.trim($name);
             }
         }
         // Fallback: grab everything after M/s up to next major word
         if (preg_match('/M\/s\s+([A-Z][A-Z\s\.\-]*)/i', $text, $m)) {
             $name = trim($m[1] ?? '');
-            if (!empty($name)) {
+            if (! empty($name)) {
                 $name = preg_replace('/\s*-.*$/', '', $name);
-                return 'M/s ' . trim($name);
+
+                return 'M/s '.trim($name);
             }
         }
 
@@ -491,111 +493,127 @@ class LoaExtractionService
     }
 
     /**
-     * Extract work items from OCR/parsed text.
-     * Handles the multi-line item descriptions common in IREPS LOA PDFs.
+     * Extract work items from the "Awarded Quantities And Rates" section.
+     *
+     * Digital (text-layer) IREPS PDFs place each item's values on a single
+     * line: "<code> <qty><unit> <rate>At Par <advised value>". Scanned PDFs
+     * (OCR) spread the same values across several lines. We try the digital
+     * single-line parser first and fall back to the OCR multi-line parser.
      *
      * @return array<int, array<string, mixed>>
      */
     private function extractWorkItems(string $text): array
     {
-        $items = [];
-        $lines = explode("\n", $text);
-        $currentSchedule = 'Schedule A';
-        $totalLines = count($lines);
+        $items = $this->parseNativeWorkItems($text);
 
-        // First pass: identify schedule names and total values
-        foreach ($lines as $line) {
-            $line = trim($line);
-            if (preg_match('/Schedule[-\s]+A\b/i', $line)) {
-                $currentSchedule = 'Schedule A';
-            } elseif (preg_match('/Schedule[-\s]+B1\b/i', $line)) {
-                $currentSchedule = 'Schedule B1';
-            } elseif (preg_match('/Schedule[-\s]+B\b/i', $line)) {
-                $currentSchedule = 'Schedule B';
+        if (! empty($items)) {
+            return $items;
+        }
+
+        return $this->parseOcrWorkItems($text);
+    }
+
+    /**
+     * Parse work items from a digital PDF where each item's values sit on a
+     * single line. The preceding lines (after the item's serial number) form
+     * the description.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseNativeWorkItems(string $text): array
+    {
+        $text = str_replace("\t", ' ', $text);
+        $lines = explode("\n", $text);
+
+        // Restrict to the awarded-items section to avoid false positives.
+        $startIdx = 0;
+        foreach ($lines as $n => $l) {
+            if (stripos($l, 'Awarded Quantities') !== false) {
+                $startIdx = $n;
+                break;
             }
         }
 
-        // Scan for item rows: look for lines containing item codes like (061022) or B16
-        // and monetary values like 84360.00 or 7066614.00
+        $items = [];
+        $descBuffer = [];
         $currentSchedule = 'Schedule A';
-        for ($i = 0; $i < $totalLines; $i++) {
+        $sno = null;
+
+        $rowCount = count($lines);
+        for ($i = $startIdx; $i < $rowCount; $i++) {
             $line = trim($lines[$i]);
 
-            if (preg_match('/Schedule[-\s]+A\b/i', $line)) {
-                $currentSchedule = 'Schedule A';
-            } elseif (preg_match('/Schedule[-\s]+B1\b/i', $line)) {
-                $currentSchedule = 'Schedule B1';
-            } elseif (preg_match('/Schedule[-\s]+B\b/i', $line)) {
-                $currentSchedule = 'Schedule B';
+            if ($line === '') {
+                continue;
             }
 
-            // Pattern: line with item-number at start AND (itemCode) AND unit AND value
-            // e.g. "2 jan average (061022) 2000/RM 42.18| At Par 84360.00"
-            if (preg_match(
-                '/^(\d+)\s+.+?\((\w{4,8})\)\s+([\d,]+)\s*[\/]?\s*(RM|TRM|Each|Joint|Sleeper|Set|MT|LS|Lump)\s+([\d.]+)[|\s]+(?:At\s*Par|At par|[\d.]+)\s+([\d,]+\.?\d*)/i',
-                $line, $m
-            )) {
-                $items[] = [
-                    'schedule_name' => $currentSchedule,
-                    'item_number' => $m[1],
-                    'item_code' => $m[2],
-                    'description' => $this->collectDescription($lines, $i),
-                    'quantity' => (float) str_replace(',', '', $m[3]),
-                    'unit' => strtoupper($m[4]),
-                    'escl_rate' => (float) $m[5],
-                    'advised_value' => (float) str_replace(',', '', $m[6]),
-                    'bid_amount' => null,
-                    'is_sub_item' => false,
-                ];
+            // Schedule header: "Schedule  A- SCH-A (...)".
+            if (preg_match('/^Schedule\s+([A-Z]\d?)\b/i', $line, $sm)
+                && stripos($line, 'Total') === false) {
+                $currentSchedule = 'Schedule '.strtoupper($sm[1]);
+                $descBuffer = [];
 
                 continue;
             }
 
-            // Simpler pattern: item-code in brackets + qty/unit + value at end
-            // "3 or, if required, (061032) 2000}RM 44.67) At Par 89340.00"
+            // Data row WITH an item code:
+            //   "012011 5000cum 102.55At Par 512750.00"
             if (preg_match(
-                '/\((\w{4,8})\).*?([\d,]+)\s*[\/}|]\s*(RM|TRM|Each|Joint|Sleeper|Set|MT|LS)\s+([\d.]+)[)|\s]+(?:At\s*Par|[\d.]+)\s+([\d,]+\.?\d*)/i',
+                '/^(\d{5,7})\s+([\d,]+)\s*([A-Za-z][A-Za-z.\/]*?)?\s*([\d,]+\.\d{1,2})\s*(?:At\s*Par|[\d.]+\s*%?\s*(?:Above|Below)?)\s+([\d,]+\.\d{1,2})/i',
                 $line, $m
             )) {
-                $itemNo = null;
-                if (preg_match('/^(\d+)\s/', $line, $nm)) {
-                    $itemNo = $nm[1];
-                }
                 $items[] = [
                     'schedule_name' => $currentSchedule,
-                    'item_number' => $itemNo,
+                    'item_number' => $sno ?? (string) (count($items) + 1),
                     'item_code' => $m[1],
-                    'description' => $this->collectDescription($lines, $i),
-                    'quantity' => (float) str_replace(',', '', $m[2]),
-                    'unit' => strtoupper($m[3]),
-                    'escl_rate' => (float) $m[4],
-                    'advised_value' => (float) str_replace(',', '', $m[5]),
+                    'description' => $this->cleanDescription($descBuffer),
+                    'quantity' => $this->cleanNumber($m[2]),
+                    'unit' => $m[3] !== '' ? $this->normaliseUnitWord($m[3]) : null,
+                    'escl_rate' => null,
+                    'advised_value' => $this->cleanNumber($m[5]),
+                    'bid_rate_unit_rate' => $this->cleanNumber($m[4]),
                     'bid_amount' => null,
                     'is_sub_item' => false,
                 ];
+                $descBuffer = [];
+                $sno = null;
 
                 continue;
             }
 
-            // Short alpha item code pattern: "B16" with advised value on same/next line
-            // "B16 CE Scanned... At Par 7066614.00"
-            if (preg_match('/\b(B\d+)\b.*?(?:At\s*Par|At par)\s+([\d,]+\.?\d*)/i', $line, $m)) {
-                $itemNo = null;
-                if (preg_match('/^(\d+)\s/', $line, $nm)) {
-                    $itemNo = $nm[1];
-                }
+            // Data row with NO code (rates shown as "View Details"):
+            //   "View Details At Par 1061535.00"
+            if (preg_match('/^View\s+Details\s+(?:At\s*Par|[\d.]+\s*%?\s*(?:Above|Below)?)\s+([\d,]+\.\d{1,2})/i', $line, $m)) {
                 $items[] = [
                     'schedule_name' => $currentSchedule,
-                    'item_number' => $itemNo,
-                    'item_code' => $m[1],
-                    'description' => $this->collectDescription($lines, $i),
+                    'item_number' => $sno ?? (string) (count($items) + 1),
+                    'item_code' => null,
+                    'description' => $this->cleanDescription($descBuffer),
                     'quantity' => null,
                     'unit' => null,
                     'escl_rate' => null,
-                    'advised_value' => (float) str_replace(',', '', $m[2]),
+                    'advised_value' => $this->cleanNumber($m[1]),
+                    'bid_rate_unit_rate' => null,
                     'bid_amount' => null,
                     'is_sub_item' => false,
                 ];
+                $descBuffer = [];
+                $sno = null;
+
+                continue;
+            }
+
+            // Standalone serial number (1–3 digits) starts a new item block.
+            if (preg_match('/^(\d{1,3})$/', $line)) {
+                $sno = $line;
+                $descBuffer = [];
+
+                continue;
+            }
+
+            // Skip noise / totals; otherwise accumulate as description.
+            if (! $this->isNoiseLine($line) && stripos($line, 'Schedule Total') === false) {
+                $descBuffer[] = $line;
             }
         }
 
@@ -603,35 +621,258 @@ class LoaExtractionService
     }
 
     /**
-     * Look backwards from the given line index to collect a multi-line item description.
-     *
-     * @param  array<int, string>  $lines
+     * Normalise a unit word found inline (e.g. "cum", "Set", "TRM").
      */
-    private function collectDescription(array $lines, int $currentIndex): ?string
+    private function normaliseUnitWord(string $word): string
     {
-        // Try to get the description from preceding lines (OCR splits description across lines)
-        $descLines = [];
-        // Look back up to 20 lines for description text
-        for ($j = max(0, $currentIndex - 20); $j < $currentIndex; $j++) {
-            $l = trim($lines[$j]);
-            // Skip empty, scan artefacts, headers
-            if (empty($l)) {
+        $known = $this->matchUnit($word);
+
+        return $known ?? ucfirst(strtolower(trim($word)));
+    }
+
+    /**
+     * Parse work items from OCR text where each value sits on its own line.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function parseOcrWorkItems(string $text): array
+    {
+        // Collapse to non-empty trimmed lines for predictable indexing.
+        $lines = array_values(array_filter(
+            array_map('trim', explode("\n", $text)),
+            static fn (string $l): bool => $l !== ''
+        ));
+        $count = count($lines);
+
+        $items = [];
+        $descBuffer = [];
+        $currentSchedule = 'Schedule A';
+        $itemNumber = 0;
+
+        for ($i = 0; $i < $count; $i++) {
+            $line = $lines[$i];
+
+            // Detect schedule header e.g. "Schedule A-SCH-A (...)", "Schedule B1-..."
+            if (preg_match('/^Schedule\s+([A-Z]\d?)\b/i', $line, $sm)) {
+                $currentSchedule = 'Schedule '.strtoupper($sm[1]);
+                $descBuffer = [];
+
                 continue;
             }
-            if (preg_match('/^(ireps\.gov|https?:|CE Scanned|Scanned with|Item\s+Desc|Item\s+Sno|Schedule|Awarded|Digitally)/i', $l)) {
+
+            // Item code = a standalone 7-digit number.
+            if (preg_match('/^\d{7}$/', $line)) {
+                $itemCode = $line;
+                $description = $this->cleanDescription($descBuffer);
+                $descBuffer = [];
+
+                // Parse the value block that follows the code.
+                $parsed = $this->parseItemValues($lines, $i + 1);
+                $itemNumber++;
+
+                $items[] = [
+                    'schedule_name' => $currentSchedule,
+                    'item_number' => (string) $itemNumber,
+                    'item_code' => $itemCode,
+                    'description' => $description,
+                    'quantity' => $parsed['quantity'],
+                    'unit' => $parsed['unit'],
+                    'escl_rate' => null,
+                    'advised_value' => $parsed['advised_value'],
+                    'bid_rate_unit_rate' => $parsed['unit_rate'],
+                    'bid_amount' => null,
+                    'is_sub_item' => false,
+                ];
+
+                // Skip past the consumed value lines.
+                $i = $parsed['next_index'] - 1;
+
                 continue;
             }
-            if (preg_match('/^(Qty|Unit|Rate|Escl|Advt|Bid\s+Amount|Bid\s+Rate)/i', $l)) {
-                continue;
+
+            // Skip OCR / layout noise; otherwise accumulate as description text.
+            if (! $this->isNoiseLine($line)) {
+                $descBuffer[] = $line;
             }
-            $descLines[] = $l;
         }
 
-        if (empty($descLines)) {
+        return $items;
+    }
+
+    /**
+     * Parse the quantity / unit / unit-rate / advised-value block that follows
+     * an item code. Values are spread across the next several non-empty lines
+     * in the order: quantity, [unit], unit rate, "At Par"/%, advised value.
+     *
+     * @param  array<int, string>  $lines
+     * @return array{quantity: ?float, unit: ?string, unit_rate: ?float, advised_value: ?float, next_index: int}
+     */
+    private function parseItemValues(array $lines, int $start): array
+    {
+        $numbers = [];
+        $unit = null;
+        $count = count($lines);
+        $j = $start;
+        $scanned = 0;
+
+        while ($j < $count && $scanned < 8 && count($numbers) < 3) {
+            $token = $lines[$j];
+
+            // Stop if we hit the next item code or a schedule header.
+            if (preg_match('/^\d{7}$/', $token) || preg_match('/^Schedule\s+[A-Z]/i', $token)) {
+                break;
+            }
+
+            // Unit token (may carry OCR prefixes like "I" or "|": ISet, |TRM, IMT).
+            if ($unit === null && ($u = $this->matchUnit($token)) !== null) {
+                $unit = $u;
+                $j++;
+                $scanned++;
+
+                continue;
+            }
+
+            // "At Par" or a percentage bid-rate line — skip it.
+            if (preg_match('/At\s*Par/i', $token) || preg_match('/^\d+(?:\.\d+)?\s*%/', $token)) {
+                $j++;
+                $scanned++;
+
+                continue;
+            }
+
+            // Numeric value (strip OCR junk like trailing | ) ] } ).
+            $num = $this->cleanNumber($token);
+            if ($num !== null) {
+                $numbers[] = $num;
+                $j++;
+                $scanned++;
+
+                continue;
+            }
+
+            // Anything else marks the start of the next description block.
+            break;
+        }
+
+        return [
+            'quantity' => $numbers[0] ?? null,
+            'unit_rate' => $numbers[1] ?? null,
+            'advised_value' => $numbers[2] ?? null,
+            'unit' => $unit,
+            'next_index' => $j,
+        ];
+    }
+
+    /**
+     * Normalise a unit token, tolerating OCR noise. Returns null if not a unit.
+     */
+    private function matchUnit(string $token): ?string
+    {
+        // Strip leading OCR artefacts (I, |, l) and surrounding punctuation.
+        $clean = strtoupper(preg_replace('/[^A-Za-z]/', '', $token));
+        // Drop a leading bogus "I"/"L" the OCR often prepends (ISet -> SET).
+        $candidates = [$clean];
+        if (strlen($clean) > 2 && in_array($clean[0], ['I', 'L'], true)) {
+            $candidates[] = substr($clean, 1);
+        }
+
+        $units = [
+            'RM' => 'RM', 'RMT' => 'RM', 'TRM' => 'TRM', 'MT' => 'MT',
+            'SET' => 'Set', 'EACH' => 'Each', 'EA' => 'Each', 'NOS' => 'Nos',
+            'NO' => 'Nos', 'CUM' => 'Cum', 'JOINT' => 'Joint', 'SLEEPER' => 'Sleeper',
+            'LS' => 'LS', 'KM' => 'Km', 'QUINTAL' => 'Quintal', 'TONNE' => 'Tonne',
+            'SQM' => 'Sqm', 'KG' => 'Kg', 'ERC' => 'ERC',
+        ];
+
+        foreach ($candidates as $c) {
+            if (isset($units[$c])) {
+                return $units[$c];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Convert an OCR numeric token to a float, or null if it is not numeric.
+     * Rejects tokens with more than two alphabetic characters (i.e. text).
+     */
+    private function cleanNumber(string $token): ?float
+    {
+        if (preg_match_all('/[A-Za-z]/', $token) > 2) {
             return null;
         }
 
-        return trim(implode(' ', $descLines));
+        $clean = str_replace(',', '', preg_replace('/[^\d.,]/', '', $token));
+        $clean = rtrim($clean, '.');
+
+        if ($clean === '' || ! is_numeric($clean)) {
+            return null;
+        }
+
+        return (float) $clean;
+    }
+
+    /**
+     * Clean an accumulated description buffer into a single tidy string.
+     *
+     * @param  array<int, string>  $buffer
+     */
+    private function cleanDescription(array $buffer): ?string
+    {
+        if (empty($buffer)) {
+            return null;
+        }
+
+        $text = implode(' ', $buffer);
+        // OCR often opens descriptions with "[" — drop a single leading bracket.
+        $text = ltrim($text, "[ \t");
+        $text = preg_replace('/\s+/', ' ', $text);
+
+        return trim($text) ?: null;
+    }
+
+    /**
+     * Determine whether a line is OCR/layout noise (headers, URLs, scan marks)
+     * that must not be treated as item description text.
+     */
+    private function isNoiseLine(string $line): bool
+    {
+        $patterns = [
+            '/^ireps\.gov/i',
+            '/^https?:/i',
+            '/ireps\.gov\.in/i',
+            '/CE\s+Scanned/i',
+            '/Scanned\s+with/i',
+            '/^Awarded\s+Quantities/i',
+            '/^Item\s*$/i',
+            '/^Sno\.?$/i',
+            '/^Item\s+Desc/i',
+            '/^Item\s+Code/i',
+            '/^Item\s+Qty/i',
+            '/^Qty\s+Unit/i',
+            '/^Unit\s*$/i',
+            '/^Rate\s*\(Rs\)/i',
+            '/^Escl/i',
+            '/^Advt\.?Value/i',
+            '/^Bid\s+Amount/i',
+            '/^Rate\/?$/i',
+            '/^Unit\s+Rate/i',
+            '/^Schedule\s+Totals/i',
+            '/^Item\s+Directory/i',
+            '/^View\s+Details/i',
+            '/^Page\s+\d+/i',
+            '/^\d{1,3}$/',              // stray page numbers
+            '/^[)\]}|]+$/',            // stray bracket lines
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (preg_match($pattern, $line)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function normaliseDate(string $date): string
