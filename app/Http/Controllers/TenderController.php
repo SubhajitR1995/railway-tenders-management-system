@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Bid;
 use App\Models\Tender;
 use App\Models\TenderCategory;
 use Illuminate\Http\RedirectResponse;
@@ -69,16 +68,11 @@ class TenderController extends Controller
             ->with('success', 'Tender created successfully.');
     }
 
-    public function show(Tender $tender, Request $request): View
+    public function show(Tender $tender): View
     {
-        $tender->load(['category', 'creator', 'bids.bidder', 'awardedBid.bidder']);
+        $tender->load(['category', 'creator']);
 
-        $userBid = null;
-        if ($request->user()->isBidder()) {
-            $userBid = $tender->bids()->where('user_id', $request->user()->id)->first();
-        }
-
-        return view('tenders.show', compact('tender', 'userBid'));
+        return view('tenders.show', compact('tender'));
     }
 
     public function edit(Tender $tender): View
@@ -141,33 +135,5 @@ class TenderController extends Controller
         $tender->update(['status' => 'closed']);
 
         return back()->with('success', 'Tender closed for submissions.');
-    }
-
-    public function award(Request $request, Tender $tender): RedirectResponse
-    {
-        if ($tender->status !== 'closed') {
-            return back()->with('error', 'Only closed tenders can be awarded.');
-        }
-
-        $validated = $request->validate([
-            'bid_id' => ['required', 'exists:bids,id'],
-        ]);
-
-        $bid = Bid::findOrFail($validated['bid_id']);
-
-        if ($bid->tender_id !== $tender->id) {
-            return back()->with('error', 'The selected bid does not belong to this tender.');
-        }
-
-        $tender->update([
-            'status' => 'awarded',
-            'awarded_bid_id' => $bid->id,
-        ]);
-
-        $bid->update(['status' => 'accepted']);
-
-        $tender->bids()->where('id', '!=', $bid->id)->update(['status' => 'rejected']);
-
-        return back()->with('success', 'Tender awarded successfully.');
     }
 }

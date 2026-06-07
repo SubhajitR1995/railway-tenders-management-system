@@ -62,10 +62,4 @@ class User extends Authenticatable
     {
         return $this->hasMany(Tender::class, 'created_by');
     }
-
-    /** @return HasMany<Bid, $this> */
-    public function bids(): HasMany
-    {
-        return $this->hasMany(Bid::class);
-    }
 }

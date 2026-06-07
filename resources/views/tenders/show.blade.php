@@ -80,130 +80,6 @@
                 </div>
             </div>
 
-            {{-- Awarded Bid --}}
-            @if($tender->isAwarded() && $tender->awardedBid)
-                <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-6">
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-8 h-8 bg-emerald-100 rounded-lg flex items-center justify-center">
-                            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
-                            </svg>
-                        </div>
-                        <h2 class="text-base font-semibold text-emerald-800">Awarded Bid</h2>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <div>
-                            <p class="font-semibold text-emerald-900">
-                                {{ $tender->awardedBid->bidder->company_name ?? $tender->awardedBid->bidder->name }}
-                            </p>
-                            <p class="text-sm text-emerald-700 mt-0.5">
-                                Award Amount: <span class="font-bold">${{ number_format($tender->awardedBid->amount, 2) }}</span>
-                            </p>
-                        </div>
-                        @if(auth()->user()->canManageTenders())
-                            <a href="{{ route('bids.show', $tender->awardedBid) }}"
-                                class="text-sm font-medium text-emerald-700 hover:text-emerald-900 underline">
-                                View Bid
-                            </a>
-                        @endif
-                    </div>
-                </div>
-            @endif
-
-            {{-- Bids Table (admin/manager) --}}
-            @if(auth()->user()->canManageTenders() && $tender->bids->isNotEmpty())
-                <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div class="px-6 py-4 border-b border-slate-100 flex items-center gap-2">
-                        <div class="w-2 h-2 bg-amber-500 rounded-full"></div>
-                        <h2 class="font-semibold text-slate-800 text-sm">
-                            Bids Received <span class="text-slate-400 font-normal">({{ $tender->bids->count() }})</span>
-                        </h2>
-                    </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-sm">
-                            <thead>
-                                <tr class="bg-slate-50 border-b border-slate-100">
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Bidder</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Amount</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
-                                    <th class="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider hidden sm:table-cell">Submitted</th>
-                                    <th class="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-slate-100">
-                                @foreach($tender->bids as $bid)
-                                    <tr @class([
-                                        'hover:bg-slate-50/50 transition-colors',
-                                        'bg-emerald-50/50' => $bid->id === $tender->awarded_bid_id,
-                                    ])>
-                                        <td class="px-6 py-3.5">
-                                            <p class="font-medium text-slate-800">{{ $bid->bidder->company_name ?? $bid->bidder->name }}</p>
-                                            <p class="text-xs text-slate-400">{{ $bid->bidder->email }}</p>
-                                        </td>
-                                        <td class="px-6 py-3.5 font-bold text-slate-800">${{ number_format($bid->amount, 2) }}</td>
-                                        <td class="px-6 py-3.5">
-                                            <span @class([
-                                                'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold',
-                                                'bg-blue-100 text-blue-700' => $bid->status === 'pending',
-                                                'bg-emerald-100 text-emerald-700' => $bid->status === 'accepted',
-                                                'bg-red-100 text-red-700' => $bid->status === 'rejected',
-                                                'bg-slate-100 text-slate-600' => !in_array($bid->status, ['pending', 'accepted', 'rejected']),
-                                            ])>
-                                                {{ ucfirst($bid->status) }}
-                                            </span>
-                                        </td>
-                                        <td class="px-6 py-3.5 text-slate-400 text-xs hidden sm:table-cell">
-                                            {{ $bid->submitted_at?->format('d M Y H:i') }}
-                                        </td>
-                                        <td class="px-6 py-3.5 text-right">
-                                            <a href="{{ route('bids.show', $bid) }}"
-                                                class="text-xs font-medium text-blue-600 hover:text-blue-800 px-2.5 py-1.5 rounded-lg hover:bg-blue-50 transition-colors inline-flex items-center gap-1">
-                                                View
-                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
-                                                </svg>
-                                            </a>
-                                        </td>
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            @endif
-
-            {{-- Award Form --}}
-            @if(auth()->user()->canManageTenders() && $tender->isClosed() && $tender->bids->isNotEmpty())
-                <div class="bg-white rounded-2xl border border-purple-200 shadow-sm p-6">
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-8 h-8 bg-purple-50 rounded-lg flex items-center justify-center">
-                            <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/>
-                            </svg>
-                        </div>
-                        <h2 class="font-semibold text-slate-800">Award This Tender</h2>
-                    </div>
-                    <form method="POST" action="{{ route('tenders.award', $tender) }}">
-                        @csrf
-                        <div class="flex gap-3">
-                            <select name="bid_id" required
-                                class="flex-1 border border-slate-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 bg-white text-slate-700">
-                                <option value="">Select the winning bid...</option>
-                                @foreach($tender->bids->sortBy('amount') as $bid)
-                                    <option value="{{ $bid->id }}">
-                                        {{ $bid->bidder->company_name ?? $bid->bidder->name }} — ${{ number_format($bid->amount, 2) }}
-                                    </option>
-                                @endforeach
-                            </select>
-                            <button type="submit"
-                                class="bg-gradient-to-r from-purple-600 to-violet-600 hover:from-purple-700 hover:to-violet-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors shrink-0"
-                                onclick="return confirm('Award this tender? This action cannot be undone.')">
-                                Award Tender
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            @endif
         </div>
 
         {{-- Sidebar --}}
@@ -253,52 +129,12 @@
                         </div>
                     </div>
 
-                    @if(auth()->user()->canManageTenders())
-                        <div class="flex items-start gap-3 pt-3 border-t border-slate-100">
-                            <div class="w-8 h-8 bg-indigo-50 rounded-lg flex items-center justify-center shrink-0">
-                                <svg class="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2"/>
-                                </svg>
-                            </div>
-                            <div>
-                                <dt class="text-xs text-slate-400">Total Bids</dt>
-                                <dd class="font-bold text-slate-900 text-xl mt-0.5">{{ $tender->bids->count() }}</dd>
-                            </div>
-                        </div>
-                    @endif
                 </dl>
             </div>
 
             {{-- Actions Card --}}
             <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-2.5">
                 <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Actions</h3>
-
-                @if(auth()->user()->isBidder())
-                    @if($tender->isOpen())
-                        @if($userBid)
-                            <a href="{{ route('bids.show', $userBid) }}"
-                                class="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>
-                                </svg>
-                                View My Bid
-                            </a>
-                        @else
-                            <a href="{{ route('bids.create', $tender) }}"
-                                class="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors">
-                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                                </svg>
-                                Submit Bid
-                            </a>
-                        @endif
-                    @else
-                        <div class="text-center py-3 text-sm text-slate-400 bg-slate-50 rounded-lg">
-                            This tender is not open for bidding
-                        </div>
-                    @endif
-                @endif
 
                 @if(auth()->user()->canManageTenders())
                     @if($tender->isDraft())

@@ -2,7 +2,6 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
-use App\Http\Controllers\BidController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\TenderCategoryController;
 use App\Http\Controllers\TenderController;
@@ -36,16 +35,6 @@ Route::middleware('auth')->group(function (): void {
     Route::delete('/tenders/{tender}', [TenderController::class, 'destroy'])->name('tenders.destroy')->middleware('role:admin,manager');
     Route::post('/tenders/{tender}/publish', [TenderController::class, 'publish'])->name('tenders.publish')->middleware('role:admin,manager');
     Route::post('/tenders/{tender}/close', [TenderController::class, 'close'])->name('tenders.close')->middleware('role:admin,manager');
-    Route::post('/tenders/{tender}/award', [TenderController::class, 'award'])->name('tenders.award')->middleware('role:admin,manager');
-
-    // Bids
-    Route::get('/bids', [BidController::class, 'index'])->name('bids.index');
-    Route::get('/tenders/{tender}/bids/create', [BidController::class, 'create'])->name('bids.create')->middleware('role:bidder');
-    Route::post('/tenders/{tender}/bids', [BidController::class, 'store'])->name('bids.store')->middleware('role:bidder');
-    Route::get('/bids/{bid}', [BidController::class, 'show'])->name('bids.show');
-    Route::get('/bids/{bid}/edit', [BidController::class, 'edit'])->name('bids.edit')->middleware('role:bidder');
-    Route::put('/bids/{bid}', [BidController::class, 'update'])->name('bids.update')->middleware('role:bidder');
-    Route::delete('/bids/{bid}', [BidController::class, 'destroy'])->name('bids.destroy')->middleware('role:bidder');
 
     // Tender Categories (admin only)
     Route::get('/categories', [TenderCategoryController::class, 'index'])->name('categories.index')->middleware('role:admin');

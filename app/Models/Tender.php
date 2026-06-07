@@ -2,14 +2,14 @@
 
 namespace App\Models;
 
+use Database\Factories\TenderFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Tender extends Model
 {
-    /** @use HasFactory<\Database\Factories\TenderFactory> */
+    /** @use HasFactory<TenderFactory> */
     use HasFactory;
 
     protected $fillable = [
@@ -22,7 +22,6 @@ class Tender extends Model
         'budget',
         'submission_deadline',
         'status',
-        'awarded_bid_id',
     ];
 
     protected function casts(): array
@@ -43,18 +42,6 @@ class Tender extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
-    }
-
-    /** @return HasMany<Bid, $this> */
-    public function bids(): HasMany
-    {
-        return $this->hasMany(Bid::class);
-    }
-
-    /** @return BelongsTo<Bid, $this> */
-    public function awardedBid(): BelongsTo
-    {
-        return $this->belongsTo(Bid::class, 'awarded_bid_id');
     }
 
     public function isOpen(): bool
