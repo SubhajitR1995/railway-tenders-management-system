@@ -251,13 +251,24 @@ class LoaExtractionService
 
     private function extractContractorName(string $text): ?string
     {
-        // "M/s S. D. ENTERPRISE-BURDWAN" — stop before the city/address that follows
-        if (preg_match('/M\/s\.?\s+([A-Z][A-Z\s\.\-]+(?:ENTERPRISE|COMPANY|CORP|LTD|LIMITED|WORKS|CONTRACTOR|CONSTRUCTION|ENGINEERS?))(?:\s*[-–]\s*[A-Z]+)?/i', $text, $m)) {
-            return 'M/s '.ucwords(strtolower(trim($m[1])));
+        // Match "M/s NAME" capturing the full name
+        // Examples: "M/s R N CHOUDHARY-KISHANGANJ", "M/s S. D. ENTERPRISE-BURDWAN"
+        if (preg_match('/M\/s\s+(.+?)(?:\s+-\s+[A-Z]+)?(?:\s+[A-Z]{2}\s+[A-Z]+\s+\d+|$)/i', $text, $m)) {
+            $name = trim($m[1] ?? '');
+            if (!empty($name) && strlen($name) > 2) {
+                // Clean up the name
+                $name = preg_replace('/\s*-.*$/', '', $name);  // remove anything after hyphen
+                $name = preg_replace('/^\s+|\s+$/', '', $name);  // trim
+                return 'M/s ' . trim($name);
+            }
         }
-        // Generic: up to first comma or newline (≤ 60 chars)
-        if (preg_match('/M\/s\.?\s+([A-Z][A-Z\s\.\-]{4,50}?)(?=\n|,|\s{3})/i', $text, $m)) {
-            return 'M/s '.ucwords(strtolower(trim($m[1])));
+        // Fallback: grab everything after M/s up to next major word
+        if (preg_match('/M\/s\s+([A-Z][A-Z\s\.\-]*)/i', $text, $m)) {
+            $name = trim($m[1] ?? '');
+            if (!empty($name)) {
+                $name = preg_replace('/\s*-.*$/', '', $name);
+                return 'M/s ' . trim($name);
+            }
         }
 
         return null;
